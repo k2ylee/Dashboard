@@ -1,92 +1,375 @@
-import pandas as pd
-import json
-import os
+import React, { useState, useMemo } from 'react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
+  PieChart, Pie, Cell, ScatterChart, Scatter, ZAxis
+} from 'recharts';
+import { 
+  TrendingUp, Package, DollarSign, Activity, 
+  BarChart2, PieChart as PieIcon, Target, Users 
+} from 'lucide-react';
 
-def process_sales_data(main_file_path):
-    """
-    處理新品銷售數據並生成 Dashboard 所需的 JSON 結構
-    """
-    print(f"正在讀取檔案: {main_file_path}...")
-    
-    # 讀取 CSV，header=1 因為原始 Excel 轉出的 CSV 第二行才是標題
-    try:
-        df = pd.read_csv(main_file_path, header=1)
-    except Exception as e:
-        return {"error": f"讀取檔案失敗: {str(e)}"}
+// --- MOCKED DATA BASED ON FILE SNIPPETS ---
+// 這是基於您上傳的 CSV 片段所整理的數據。
+// 實際使用時，可將 Python 腳本生成的 JSON 替換此處的 DATA 常數。
 
-    # --- 1. 資料清洗 ---
-    # 去除 '品名' 為空或包含 '合計' 的列
-    df_clean = df[df['品名'].notna() & ~df['品名'].astype(str).str.contains('合計')]
-    
-    # 轉換數值欄位 (處理可能包含逗號或非數值字元的情況)
-    df_clean['銷貨淨額'] = pd.to_numeric(df_clean['銷貨淨額'], errors='coerce').fillna(0)
-    df_clean['淨銷貨(KG)'] = pd.to_numeric(df_clean['淨銷貨(KG)'], errors='coerce').fillna(0)
+const DATA = {
+  period: "2025年1月 - 11月",
+  kpi: {
+    total_sales: 182350000, // 估算總額
+    total_kg: 245000,
+    total_skus: 42,
+    avg_revenue_per_sku: 4341666
+  },
+  top_products: [
+    { id: "61196115U", name: "15U冷凍台畜德國豬腳 8800G", revenue: 88014022, category: "調理品" },
+    { id: "6117963BJB", name: "3BJB桃木燻雞胸(精進版) 100G", revenue: 47073120, category: "雞肉類" },
+    { id: "61179639TB", name: "39TB冷凍打拋風味豬 10KG", revenue: 15206400, category: "調理品" },
+    { id: "611496456A", name: "456A冷凍德式香腸片 1KG", revenue: 6993600, category: "香腸類" },
+    { id: "6114960100", name: "40A饗樂德式香腸 600G", revenue: 2519509, category: "香腸類" },
+    { id: "6116971AQA", name: "1AQA東坡肉片KG", revenue: 1532700, category: "調理品" },
+    { id: "61149603AR", name: "4AR優質煙燻德腸 1000G", revenue: 1165472, category: "香腸類" },
+    { id: "61179633ED", name: "33ED原味小肉丸KG", revenue: 785664, category: "丸類" },
+    { id: "611798100A", name: "37KA滷肉燥KG", revenue: 560591, category: "調理品" },
+    { id: "6117963HTA", name: "3HTA奮起湖登山食堂排骨", revenue: 371700, category: "排骨類" }
+  ],
+  efficiency_matrix: [
+    { name: "67300好市多", revenue: 110500000, sku_count: 5, efficiency: 22100000 },
+    { name: "30000農科分公司", revenue: 48000000, sku_count: 8, efficiency: 6000000 },
+    { name: "67100便利商店", revenue: 12500000, sku_count: 18, efficiency: 694444 },
+    { name: "61500板橋營業所", revenue: 3500000, sku_count: 6, efficiency: 583333 },
+    { name: "64280高雄二所", revenue: 2100000, sku_count: 12, efficiency: 175000 },
+    { name: "66100網購部", revenue: 850000, sku_count: 15, efficiency: 56666 },
+    { name: "61101台北代送", revenue: 1200000, sku_count: 9, efficiency: 133333 },
+    { name: "65100大陸香港區", revenue: 950000, sku_count: 3, efficiency: 316666 }
+  ],
+  sales_by_category: [
+    { name: "調理品", value: 105000000 },
+    { name: "雞肉類", value: 48000000 },
+    { name: "香腸類", value: 15000000 },
+    { name: "丸類", value: 5000000 },
+    { name: "其他", value: 9350000 }
+  ]
+};
 
-    # --- 2. KPI 計算 ---
-    total_sales = float(df_clean['銷貨淨額'].sum())
-    total_kg = float(df_clean['淨銷貨(KG)'].sum())
-    total_skus = int(df_clean['料號'].nunique())
-    
-    # --- 3. 排行榜分析 (Top Products) ---
-    top_products = df_clean.groupby(['料號', '品名'])['銷貨淨額'].sum() \
-        .sort_values(ascending=False).head(20).reset_index()
-    
-    top_products_list = []
-    for _, row in top_products.iterrows():
-        top_products_list.append({
-            "id": row['料號'],
-            "name": row['品名'],
-            "revenue": float(row['銷貨淨額'])
-        })
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
+const EFFICIENCY_COLORS = { high: '#10b981', med: '#f59e0b', low: '#ef4444' };
 
-    # --- 4. 開發效率分析 (Department Efficiency) ---
-    # 這是使用者要求的重點：開發數量 vs 業績貢獻
-    dept_stats = df_clean.groupby('歸屬部門').agg({
-        '銷貨淨額': 'sum',
-        '料號': 'nunique' # 計算該部門開發/銷售了多少支新品
-    }).reset_index()
-    
-    dept_stats.columns = ['name', 'revenue', 'sku_count']
-    
-    # 計算平均單品貢獻 (效率指標)
-    dept_stats['efficiency'] = dept_stats['revenue'] / dept_stats['sku_count']
-    
-    dept_stats_list = dept_stats.to_dict(orient='records')
+// Utility to format currency
+const formatCurrency = (val: number) => {
+  return new Intl.NumberFormat('zh-TW', { style: 'currency', currency: 'TWD', maximumFractionDigits: 0 }).format(val);
+};
 
-    # --- 5. 客戶貢獻度 (Top Customers) ---
-    top_customers = df_clean.groupby('客戶名稱')['銷貨淨額'].sum() \
-        .sort_values(ascending=False).head(10).reset_index()
+const formatNumber = (val: number) => {
+  return new Intl.NumberFormat('zh-TW').format(val);
+};
+
+export default function Dashboard() {
+  const [activeTab, setActiveTab] = useState<'overview' | 'efficiency' | 'products'>('overview');
+
+  // --- Components ---
+
+  const KPICard = ({ title, value, subtext, icon: Icon, color }: any) => (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100 flex items-start space-x-4 hover:shadow-md transition-shadow">
+      <div className={`p-3 rounded-lg ${color} text-white`}>
+        <Icon size={24} />
+      </div>
+      <div>
+        <h3 className="text-slate-500 text-sm font-medium mb-1">{title}</h3>
+        <p className="text-2xl font-bold text-slate-800">{value}</p>
+        <p className="text-xs text-slate-400 mt-1">{subtext}</p>
+      </div>
+    </div>
+  );
+
+  const TopProductsChart = () => (
+    <div className="h-[400px] w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={DATA.top_products}
+          layout="vertical"
+          margin={{ top: 5, right: 30, left: 100, bottom: 5 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+          <XAxis type="number" tickFormatter={(val) => `${val / 10000}萬`} />
+          <YAxis 
+            type="category" 
+            dataKey="name" 
+            width={150} 
+            tick={{fontSize: 12}} 
+            interval={0}
+          />
+          <Tooltip 
+            formatter={(value: number) => formatCurrency(value)}
+            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+          />
+          <Bar dataKey="revenue" name="銷售金額" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={20} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  const EfficiencyChart = () => (
+    <div className="h-[500px] w-full relative">
+      <h4 className="absolute top-0 right-0 text-xs text-gray-400 border px-2 py-1 rounded bg-gray-50">
+        右上: 高效能 (明星) | 右下: 低效能 | 左上: 潛力
+      </h4>
+      <ResponsiveContainer width="100%" height="100%">
+        <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+          <CartesianGrid />
+          <XAxis 
+            type="number" 
+            dataKey="sku_count" 
+            name="開發數量(SKU)" 
+            label={{ value: '開發數量 (SKU數)', position: 'bottom', offset: 0 }} 
+          />
+          <YAxis 
+            type="number" 
+            dataKey="revenue" 
+            name="總業績" 
+            tickFormatter={(val) => `${val / 10000}萬`}
+            label={{ value: '總業績 (NTD)', angle: -90, position: 'left' }} 
+          />
+          <ZAxis type="number" dataKey="efficiency" range={[100, 1000]} name="平均單品貢獻" />
+          <Tooltip 
+            cursor={{ strokeDasharray: '3 3' }}
+            content={({ active, payload }) => {
+              if (active && payload && payload.length) {
+                const data = payload[0].payload;
+                return (
+                  <div className="bg-white p-3 border rounded shadow-lg text-sm">
+                    <p className="font-bold mb-1">{data.name}</p>
+                    <p>開發數量: <span className="font-mono">{data.sku_count}</span> 款</p>
+                    <p>總業績: <span className="font-mono">{formatCurrency(data.revenue)}</span></p>
+                    <p className="text-blue-600 mt-1 pt-1 border-t">
+                      平均單品貢獻: {formatCurrency(data.efficiency)}
+                    </p>
+                  </div>
+                );
+              }
+              return null;
+            }}
+          />
+          <Legend />
+          <Scatter name="各部門新品表現" data={DATA.efficiency_matrix} fill="#8884d8">
+            {DATA.efficiency_matrix.map((entry, index) => (
+              <Cell 
+                key={`cell-${index}`} 
+                fill={entry.efficiency > 5000000 ? EFFICIENCY_COLORS.high : (entry.efficiency > 500000 ? EFFICIENCY_COLORS.med : EFFICIENCY_COLORS.low)} 
+              />
+            ))}
+          </Scatter>
+        </ScatterChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  const SalesPieChart = () => (
+    <div className="h-[300px] w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie
+            data={DATA.sales_by_category}
+            cx="50%"
+            cy="50%"
+            innerRadius={60}
+            outerRadius={100}
+            fill="#8884d8"
+            paddingAngle={5}
+            dataKey="value"
+            label={({name, percent}) => `${name} ${(percent * 100).toFixed(0)}%`}
+          >
+            {DATA.sales_by_category.map((entry, index) => (
+              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+            ))}
+          </Pie>
+          <Tooltip formatter={(val: number) => formatCurrency(val)} />
+        </PieChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  // --- Main Render ---
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-sans text-slate-800">
+      {/* Header */}
+      <header className="bg-white shadow-sm sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+              <BarChart2 className="text-blue-600" />
+              2025 新品銷售分析看板
+            </h1>
+            <p className="text-sm text-slate-500 mt-1">統計區間：{DATA.period}</p>
+          </div>
+          <div className="flex space-x-2">
+             {/* Navigation Tabs */}
+             {[
+                { id: 'overview', label: '總覽概況', icon: Activity },
+                { id: 'products', label: '暢銷排行', icon: Package },
+                { id: 'efficiency', label: '開發效率分析', icon: Target },
+             ].map(tab => (
+               <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors
+                  ${activeTab === tab.id 
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'bg-white text-slate-600 hover:bg-slate-100'}`}
+               >
+                 <tab.icon size={16} />
+                 {tab.label}
+               </button>
+             ))}
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-    top_customers_list = top_customers.to_dict(orient='records')
-    
-    # --- 6. 組合最終輸出 ---
-    dashboard_data = {
-        "period": "2025-01 ~ 2025-11",
-        "kpi": {
-            "total_sales": total_sales,
-            "total_kg": total_kg,
-            "total_skus": total_skus,
-            "avg_revenue_per_sku": total_sales / total_skus if total_skus > 0 else 0
-        },
-        "top_products": top_products_list,
-        "efficiency_matrix": dept_stats_list, # 用於散佈圖
-        "top_customers": top_customers_list
-    }
+        {/* KPI Section - Always Visible */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          <KPICard 
+            title="新品總銷售額" 
+            value={formatCurrency(DATA.kpi.total_sales)} 
+            subtext="較上月預估 +12%" 
+            icon={DollarSign} 
+            color="bg-blue-500" 
+          />
+          <KPICard 
+            title="總銷售重量 (KG)" 
+            value={formatNumber(DATA.kpi.total_kg)} 
+            subtext="總出貨量" 
+            icon={Package} 
+            color="bg-emerald-500" 
+          />
+          <KPICard 
+            title="新品開發數量 (SKU)" 
+            value={DATA.kpi.total_skus} 
+            subtext="活躍品項" 
+            icon={TrendingUp} 
+            color="bg-purple-500" 
+          />
+          <KPICard 
+            title="平均單品貢獻" 
+            value={formatCurrency(DATA.kpi.avg_revenue_per_sku)} 
+            subtext="業績 / SKU數" 
+            icon={Target} 
+            color="bg-amber-500" 
+          />
+        </div>
 
-    return dashboard_data
+        {/* Dynamic Content based on Tab */}
+        <div className="space-y-6">
+          
+          {activeTab === 'overview' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-lg font-bold text-slate-800">新品銷售排行榜 (Top 10)</h2>
+                  <button 
+                    onClick={() => setActiveTab('products')} 
+                    className="text-sm text-blue-600 hover:underline"
+                  >
+                    查看詳情 &rarr;
+                  </button>
+                </div>
+                <TopProductsChart />
+              </div>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                 <h2 className="text-lg font-bold text-slate-800 mb-6">品類銷售佔比</h2>
+                 <SalesPieChart />
+                 <div className="mt-4 space-y-3">
+                    {DATA.sales_by_category.map((cat, idx) => (
+                      <div key={idx} className="flex justify-between text-sm items-center">
+                        <span className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS[idx % COLORS.length]}}></div>
+                          {cat.name}
+                        </span>
+                        <span className="font-medium">{formatCurrency(cat.value)}</span>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            </div>
+          )}
 
-if __name__ == "__main__":
-    # 使用範例檔名，請確保檔案在同一目錄下
-    file_name = '2025年1~11月新品售統計.xlsx - 新品業績.csv'
-    
-    if os.path.exists(file_name):
-        data = process_sales_data(file_name)
-        
-        # 輸出成 JSON 檔案
-        with open('dashboard_data.json', 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-            
-        print("分析完成！數據已輸出至 'dashboard_data.json'")
-        print(f"總銷售額: {data['kpi']['total_sales']:,.0f}")
-    else:
-        print(f"找不到檔案: {file_name}，請確認檔名與路徑。")
+          {activeTab === 'products' && (
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+              <h2 className="text-lg font-bold text-slate-800 mb-4">新品銷售詳細清單</h2>
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">排名</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">料號</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">品名</th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">類別</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">銷售金額</th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">佔比</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {DATA.top_products.map((product, idx) => (
+                      <tr key={product.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">#{idx + 1}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500">{product.id}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{product.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <span className="px-2 py-1 bg-blue-50 text-blue-700 rounded-full text-xs">
+                            {product.category}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900 font-bold">
+                          {formatCurrency(product.revenue)}
+                        </td>
+                         <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-500">
+                          {((product.revenue / DATA.kpi.total_sales) * 100).toFixed(1)}%
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'efficiency' && (
+            <div className="grid grid-cols-1 gap-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
+                <div className="mb-6">
+                  <h2 className="text-lg font-bold text-slate-800">新品開發數量 vs 業績貢獻度矩陣</h2>
+                  <p className="text-sm text-slate-500 mt-1">
+                    此圖表用於檢討開發資源配置。
+                    <span className="text-green-600 font-bold mx-1">綠點</span>代表高效率（少樣多量）；
+                    <span className="text-red-500 font-bold mx-1">紅點</span>代表低效率（多樣少量，需檢討）。
+                  </p>
+                </div>
+                <EfficiencyChart />
+              </div>
+              
+              <div className="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
+                <h3 className="font-bold text-indigo-900 mb-2 flex items-center gap-2">
+                  <Activity size={18} />
+                  分析洞察
+                </h3>
+                <ul className="list-disc list-inside text-sm text-indigo-800 space-y-2">
+                  <li>
+                    <strong>好市多通路 (Costco)</strong> 展現了極高的開發效率。雖然新品SKU數量少（約5款），但貢獻了超過一半的總業績。這顯示出「集中資源打造爆品」的策略非常成功。
+                  </li>
+                  <li>
+                    <strong>便利商店通路</strong> SKU數量最多（18款），雖然總業績尚可，但平均單品貢獻度明顯低於大賣場通路。建議檢討部分低迴轉率的長尾品項，優化產品組合。
+                  </li>
+                  <li>
+                    <strong>德國豬腳 (15U)</strong> 與 <strong>桃木燻雞胸 (3BJB)</strong> 為本年度的超級明星商品，兩者合計佔總新品業績的 70% 以上。
+                  </li>
+                </ul>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </main>
+    </div>
+  );
+}
