@@ -1,622 +1,92 @@
-<!DOCTYPE html>
-<!-- saved from url=(0227)file:///C:/Users/k2yle/OneDrive/%E6%A1%8C%E9%9D%A2/%E8%B6%85%E5%95%86%E5%86%B7%E8%97%8F%E9%AE%AE%E9%A3%9F%E4%BE%9B%E6%87%89%E9%8F%88%E8%BD%89%E5%9E%8B%E7%AD%96%E7%95%A5%EF%BC%9A%E5%87%8D%E8%BD%89%E8%97%8F%E6%A9%9F%E5%88%B6.html -->
-<html lang="zh-TW"><head><meta name="viewport" content="width=device-width, initial-scale=1.0">
+import pandas as pd
+import json
+import os
+
+def process_sales_data(main_file_path):
+    """
+    處理新品銷售數據並生成 Dashboard 所需的 JSON 結構
+    """
+    print(f"正在讀取檔案: {main_file_path}...")
     
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>超商冷藏鮮食供應鏈轉型策略：凍轉藏機制</title>
+    # 讀取 CSV，header=1 因為原始 Excel 轉出的 CSV 第二行才是標題
+    try:
+        df = pd.read_csv(main_file_path, header=1)
+    except Exception as e:
+        return {"error": f"讀取檔案失敗: {str(e)}"}
+
+    # --- 1. 資料清洗 ---
+    # 去除 '品名' 為空或包含 '合計' 的列
+    df_clean = df[df['品名'].notna() & ~df['品名'].astype(str).str.contains('合計')]
     
-    <!-- Tailwind CSS -->
-    <script src="./凍轉藏_files/saved_resource"></script>
+    # 轉換數值欄位 (處理可能包含逗號或非數值字元的情況)
+    df_clean['銷貨淨額'] = pd.to_numeric(df_clean['銷貨淨額'], errors='coerce').fillna(0)
+    df_clean['淨銷貨(KG)'] = pd.to_numeric(df_clean['淨銷貨(KG)'], errors='coerce').fillna(0)
+
+    # --- 2. KPI 計算 ---
+    total_sales = float(df_clean['銷貨淨額'].sum())
+    total_kg = float(df_clean['淨銷貨(KG)'].sum())
+    total_skus = int(df_clean['料號'].nunique())
     
-    <!-- Chart.js -->
-    <script src="./凍轉藏_files/chart.js.下載"></script>
+    # --- 3. 排行榜分析 (Top Products) ---
+    top_products = df_clean.groupby(['料號', '品名'])['銷貨淨額'].sum() \
+        .sort_values(ascending=False).head(20).reset_index()
     
-    <!-- Google Fonts -->
-    <link href="./凍轉藏_files/css2" rel="stylesheet">
+    top_products_list = []
+    for _, row in top_products.iterrows():
+        top_products_list.append({
+            "id": row['料號'],
+            "name": row['品名'],
+            "revenue": float(row['銷貨淨額'])
+        })
 
-    <style>
-        body {
-            font-family: 'Noto Sans TC', sans-serif;
-            background-color: #F3F4F6; /* Cool Grey 100 */
-            color: #1F2937; /* Grey 800 */
-        }
-        .glass-panel {
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-        .nav-item.active {
-            border-bottom: 2px solid #0EA5E9; /* Sky 500 */
-            color: #0EA5E9;
-        }
-        .chart-container {
-            position: relative;
-            width: 100%;
-            margin-left: auto;
-            margin-right: auto;
-        }
-        /* Custom Scrollbar for sleek look */
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #f1f1f1; 
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #cbd5e1; 
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8; 
-        }
-        .step-card {
-            transition: all 0.3s ease;
-        }
-        .step-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-        }
-    </style>
-    <!-- Chosen Palette: Cold Chain Professional (Cool Greys, Sky Blue, Navy, Amber for alerts) -->
-    <!-- Application Structure Plan: 
-         1. Hero Section: High-level Executive Summary & Urgency.
-         2. Problem Diagnosis: Visualizing the "Bullwhip Effect" and Forecast Failure using a Line Chart.
-         3. The Solution (Frozen-to-Chilled): Interactive diagram explaining the new workflow vs old.
-         4. Technical Deep Dive: Radar chart comparing thawing technologies to justify "Forced Air".
-         5. Compliance & Labeling: A stepped process guide for the "Labeling Team" and "Shelf-life Study".
-         6. Strategic Roadmap: A timeline view for implementation.
-         User Flow: Scroll-based narrative with interactive charts to explore "What-if" scenarios (e.g., toggling forecast models) and tabbed content for technical details.
-    -->
-    <!-- Visualization & Content Choices:
-         1. Volatility Chart (Line): Shows why Psd fails. Goal: Inform/Convince. Interaction: Toggle datasets. Library: Chart.js.
-         2. Tech Comparison (Radar): Compares Thawing methods. Goal: Decision Support. Interaction: Tooltip details. Library: Chart.js.
-         3. Process Flow (HTML/CSS): Visualizes the supply chain steps. Goal: Educational. Interaction: Hover/Click for details. Method: Tailwind Grid/Flex.
-         4. Roadmap (HTML/CSS): Timeline. Goal: Planning. Method: Flexbox.
-    -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
-<style>*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.fixed{position:fixed}.absolute{position:absolute}.relative{position:relative}.-right-20{right:-5rem}.-top-20{top:-5rem}.-top-3{top:-0.75rem}.left-1\/2{left:50%}.top-0{top:0px}.z-10{z-index:10}.z-50{z-index:50}.mx-auto{margin-left:auto;margin-right:auto}.mb-1{margin-bottom:0.25rem}.mb-12{margin-bottom:3rem}.mb-2{margin-bottom:0.5rem}.mb-4{margin-bottom:1rem}.mb-6{margin-bottom:1.5rem}.ml-2{margin-left:0.5rem}.mr-2{margin-right:0.5rem}.mr-3{margin-right:0.75rem}.mr-4{margin-right:1rem}.mt-1{margin-top:0.25rem}.mt-2{margin-top:0.5rem}.mt-4{margin-top:1rem}.mt-6{margin-top:1.5rem}.mt-8{margin-top:2rem}.block{display:block}.flex{display:flex}.grid{display:grid}.hidden{display:none}.h-16{height:4rem}.h-72{height:18rem}.h-8{height:2rem}.h-80{height:20rem}.h-96{height:24rem}.w-8{width:2rem}.w-96{width:24rem}.w-full{width:100%}.max-w-3xl{max-width:48rem}.max-w-7xl{max-width:80rem}.flex-1{flex:1 1 0%}.flex-shrink-0{flex-shrink:0}.-translate-x-1\/2{--tw-translate-x:-50%;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.scale-105{--tw-scale-x:1.05;--tw-scale-y:1.05;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.transform{transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.cursor-default{cursor:default}.list-inside{list-style-position:inside}.list-disc{list-style-type:disc}.grid-cols-1{grid-template-columns:repeat(1, minmax(0, 1fr))}.grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.items-start{align-items:flex-start}.items-center{align-items:center}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-12{gap:3rem}.gap-2{gap:0.5rem}.gap-4{gap:1rem}.gap-6{gap:1.5rem}.gap-8{gap:2rem}.space-x-8 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(2rem * var(--tw-space-x-reverse));margin-left:calc(2rem * calc(1 - var(--tw-space-x-reverse)))}.space-y-12 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(3rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(3rem * var(--tw-space-y-reverse))}.space-y-2 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.5rem * var(--tw-space-y-reverse))}.space-y-4 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem * var(--tw-space-y-reverse))}.overflow-hidden{overflow:hidden}.rounded{border-radius:0.25rem}.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:0.5rem}.rounded-xl{border-radius:0.75rem}.border{border-width:1px}.border-2{border-width:2px}.border-b{border-bottom-width:1px}.border-l-4{border-left-width:4px}.border-t{border-top-width:1px}.border-t-4{border-top-width:4px}.border-dashed{border-style:dashed}.border-amber-400{--tw-border-opacity:1;border-color:rgb(251 191 36 / var(--tw-border-opacity, 1))}.border-blue-100{--tw-border-opacity:1;border-color:rgb(219 234 254 / var(--tw-border-opacity, 1))}.border-blue-400{--tw-border-opacity:1;border-color:rgb(96 165 250 / var(--tw-border-opacity, 1))}.border-blue-600{--tw-border-opacity:1;border-color:rgb(37 99 235 / var(--tw-border-opacity, 1))}.border-gray-100{--tw-border-opacity:1;border-color:rgb(243 244 246 / var(--tw-border-opacity, 1))}.border-gray-200{--tw-border-opacity:1;border-color:rgb(229 231 235 / var(--tw-border-opacity, 1))}.border-gray-300{--tw-border-opacity:1;border-color:rgb(209 213 219 / var(--tw-border-opacity, 1))}.border-red-200{--tw-border-opacity:1;border-color:rgb(254 202 202 / var(--tw-border-opacity, 1))}.border-red-400{--tw-border-opacity:1;border-color:rgb(248 113 113 / var(--tw-border-opacity, 1))}.border-sky-200{--tw-border-opacity:1;border-color:rgb(186 230 253 / var(--tw-border-opacity, 1))}.border-sky-400{--tw-border-opacity:1;border-color:rgb(56 189 248 / var(--tw-border-opacity, 1))}.border-sky-500{--tw-border-opacity:1;border-color:rgb(14 165 233 / var(--tw-border-opacity, 1))}.border-slate-700{--tw-border-opacity:1;border-color:rgb(51 65 85 / var(--tw-border-opacity, 1))}.border-white\/20{border-color:rgb(255 255 255 / 0.2)}.bg-blue-50{--tw-bg-opacity:1;background-color:rgb(239 246 255 / var(--tw-bg-opacity, 1))}.bg-emerald-100{--tw-bg-opacity:1;background-color:rgb(209 250 229 / var(--tw-bg-opacity, 1))}.bg-gray-100{--tw-bg-opacity:1;background-color:rgb(243 244 246 / var(--tw-bg-opacity, 1))}.bg-gray-50{--tw-bg-opacity:1;background-color:rgb(249 250 251 / var(--tw-bg-opacity, 1))}.bg-indigo-100{--tw-bg-opacity:1;background-color:rgb(224 231 255 / var(--tw-bg-opacity, 1))}.bg-indigo-50{--tw-bg-opacity:1;background-color:rgb(238 242 255 / var(--tw-bg-opacity, 1))}.bg-purple-50{--tw-bg-opacity:1;background-color:rgb(250 245 255 / var(--tw-bg-opacity, 1))}.bg-red-100{--tw-bg-opacity:1;background-color:rgb(254 226 226 / var(--tw-bg-opacity, 1))}.bg-red-50{--tw-bg-opacity:1;background-color:rgb(254 242 242 / var(--tw-bg-opacity, 1))}.bg-sky-100{--tw-bg-opacity:1;background-color:rgb(224 242 254 / var(--tw-bg-opacity, 1))}.bg-sky-50{--tw-bg-opacity:1;background-color:rgb(240 249 255 / var(--tw-bg-opacity, 1))}.bg-sky-500\/20{background-color:rgb(14 165 233 / 0.2)}.bg-sky-600{--tw-bg-opacity:1;background-color:rgb(2 132 199 / var(--tw-bg-opacity, 1))}.bg-slate-200{--tw-bg-opacity:1;background-color:rgb(226 232 240 / var(--tw-bg-opacity, 1))}.bg-slate-900{--tw-bg-opacity:1;background-color:rgb(15 23 42 / var(--tw-bg-opacity, 1))}.bg-white{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.bg-white\/10{background-color:rgb(255 255 255 / 0.1)}.bg-white\/90{background-color:rgb(255 255 255 / 0.9)}.bg-gradient-to-r{background-image:linear-gradient(to right, var(--tw-gradient-stops))}.from-slate-800{--tw-gradient-from:#1e293b var(--tw-gradient-from-position);--tw-gradient-to:rgb(30 41 59 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)}.to-slate-900{--tw-gradient-to:#0f172a var(--tw-gradient-to-position)}.p-2{padding:0.5rem}.p-3{padding:0.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.p-8{padding:2rem}.px-2{padding-left:0.5rem;padding-right:0.5rem}.px-3{padding-left:0.75rem;padding-right:0.75rem}.px-4{padding-left:1rem;padding-right:1rem}.py-1{padding-top:0.25rem;padding-bottom:0.25rem}.py-12{padding-top:3rem;padding-bottom:3rem}.py-2{padding-top:0.5rem;padding-bottom:0.5rem}.py-5{padding-top:1.25rem;padding-bottom:1.25rem}.py-8{padding-top:2rem;padding-bottom:2rem}.pb-12{padding-bottom:3rem}.pl-4{padding-left:1rem}.pt-16{padding-top:4rem}.pt-4{padding-top:1rem}.pt-8{padding-top:2rem}.text-center{text-align:center}.text-2xl{font-size:1.5rem;line-height:2rem}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:0.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:0.75rem;line-height:1rem}.font-bold{font-weight:700}.font-medium{font-weight:500}.uppercase{text-transform:uppercase}.tracking-wider{letter-spacing:0.05em}.text-amber-800{--tw-text-opacity:1;color:rgb(146 64 14 / var(--tw-text-opacity, 1))}.text-blue-800{--tw-text-opacity:1;color:rgb(30 64 175 / var(--tw-text-opacity, 1))}.text-emerald-600{--tw-text-opacity:1;color:rgb(5 150 105 / var(--tw-text-opacity, 1))}.text-gray-400{--tw-text-opacity:1;color:rgb(156 163 175 / var(--tw-text-opacity, 1))}.text-gray-500{--tw-text-opacity:1;color:rgb(107 114 128 / var(--tw-text-opacity, 1))}.text-gray-600{--tw-text-opacity:1;color:rgb(75 85 99 / var(--tw-text-opacity, 1))}.text-gray-700{--tw-text-opacity:1;color:rgb(55 65 81 / var(--tw-text-opacity, 1))}.text-gray-800{--tw-text-opacity:1;color:rgb(31 41 55 / var(--tw-text-opacity, 1))}.text-indigo-600{--tw-text-opacity:1;color:rgb(79 70 229 / var(--tw-text-opacity, 1))}.text-indigo-800{--tw-text-opacity:1;color:rgb(55 48 163 / var(--tw-text-opacity, 1))}.text-purple-700{--tw-text-opacity:1;color:rgb(126 34 206 / var(--tw-text-opacity, 1))}.text-red-500{--tw-text-opacity:1;color:rgb(239 68 68 / var(--tw-text-opacity, 1))}.text-red-600{--tw-text-opacity:1;color:rgb(220 38 38 / var(--tw-text-opacity, 1))}.text-red-700{--tw-text-opacity:1;color:rgb(185 28 28 / var(--tw-text-opacity, 1))}.text-red-800{--tw-text-opacity:1;color:rgb(153 27 27 / var(--tw-text-opacity, 1))}.text-sky-300{--tw-text-opacity:1;color:rgb(125 211 252 / var(--tw-text-opacity, 1))}.text-sky-400{--tw-text-opacity:1;color:rgb(56 189 248 / var(--tw-text-opacity, 1))}.text-sky-600{--tw-text-opacity:1;color:rgb(2 132 199 / var(--tw-text-opacity, 1))}.text-sky-800{--tw-text-opacity:1;color:rgb(7 89 133 / var(--tw-text-opacity, 1))}.text-slate-300{--tw-text-opacity:1;color:rgb(203 213 225 / var(--tw-text-opacity, 1))}.text-slate-400{--tw-text-opacity:1;color:rgb(148 163 184 / var(--tw-text-opacity, 1))}.text-slate-800{--tw-text-opacity:1;color:rgb(30 41 59 / var(--tw-text-opacity, 1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.antialiased{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.opacity-70{opacity:0.7}.shadow{--tw-shadow:0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color), 0 4px 6px -4px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-sm{--tw-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05);--tw-shadow-colored:0 1px 2px 0 var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.ring-2{--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000)}.ring-indigo-200{--tw-ring-opacity:1;--tw-ring-color:rgb(199 210 254 / var(--tw-ring-opacity, 1))}.ring-sky-300{--tw-ring-opacity:1;--tw-ring-color:rgb(125 211 252 / var(--tw-ring-opacity, 1))}.blur-3xl{--tw-blur:blur(64px);filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.backdrop-blur{--tw-backdrop-blur:blur(8px);-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition{transition-property:color, background-color, border-color, fill, stroke, opacity, box-shadow, transform, filter, -webkit-text-decoration-color, -webkit-backdrop-filter;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, -webkit-text-decoration-color, -webkit-backdrop-filter;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.hover\:bg-sky-700:hover{--tw-bg-opacity:1;background-color:rgb(3 105 161 / var(--tw-bg-opacity, 1))}.hover\:bg-slate-300:hover{--tw-bg-opacity:1;background-color:rgb(203 213 225 / var(--tw-bg-opacity, 1))}.hover\:opacity-100:hover{opacity:1}@media (min-width: 640px){.sm\:block{display:block}.sm\:px-6{padding-left:1.5rem;padding-right:1.5rem}}@media (min-width: 768px){.md\:grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.md\:text-4xl{font-size:2.25rem;line-height:2.5rem}}@media (min-width: 1024px){.lg\:col-span-2{grid-column:span 2 / span 2}.lg\:grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.lg\:grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.lg\:px-8{padding-left:2rem;padding-right:2rem}}</style><style>*, ::before, ::after{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }::backdrop{--tw-border-spacing-x:0;--tw-border-spacing-y:0;--tw-translate-x:0;--tw-translate-y:0;--tw-rotate:0;--tw-skew-x:0;--tw-skew-y:0;--tw-scale-x:1;--tw-scale-y:1;--tw-pan-x: ;--tw-pan-y: ;--tw-pinch-zoom: ;--tw-scroll-snap-strictness:proximity;--tw-gradient-from-position: ;--tw-gradient-via-position: ;--tw-gradient-to-position: ;--tw-ordinal: ;--tw-slashed-zero: ;--tw-numeric-figure: ;--tw-numeric-spacing: ;--tw-numeric-fraction: ;--tw-ring-inset: ;--tw-ring-offset-width:0px;--tw-ring-offset-color:#fff;--tw-ring-color:rgb(59 130 246 / 0.5);--tw-ring-offset-shadow:0 0 #0000;--tw-ring-shadow:0 0 #0000;--tw-shadow:0 0 #0000;--tw-shadow-colored:0 0 #0000;--tw-blur: ;--tw-brightness: ;--tw-contrast: ;--tw-grayscale: ;--tw-hue-rotate: ;--tw-invert: ;--tw-saturate: ;--tw-sepia: ;--tw-drop-shadow: ;--tw-backdrop-blur: ;--tw-backdrop-brightness: ;--tw-backdrop-contrast: ;--tw-backdrop-grayscale: ;--tw-backdrop-hue-rotate: ;--tw-backdrop-invert: ;--tw-backdrop-opacity: ;--tw-backdrop-saturate: ;--tw-backdrop-sepia: ;--tw-contain-size: ;--tw-contain-layout: ;--tw-contain-paint: ;--tw-contain-style: }/* ! tailwindcss v3.4.17 | MIT License | https://tailwindcss.com */*,::after,::before{box-sizing:border-box;border-width:0;border-style:solid;border-color:#e5e7eb}::after,::before{--tw-content:''}:host,html{line-height:1.5;-webkit-text-size-adjust:100%;-moz-tab-size:4;tab-size:4;font-family:ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";font-feature-settings:normal;font-variation-settings:normal;-webkit-tap-highlight-color:transparent}body{margin:0;line-height:inherit}hr{height:0;color:inherit;border-top-width:1px}abbr:where([title]){-webkit-text-decoration:underline dotted;text-decoration:underline dotted}h1,h2,h3,h4,h5,h6{font-size:inherit;font-weight:inherit}a{color:inherit;text-decoration:inherit}b,strong{font-weight:bolder}code,kbd,pre,samp{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;font-feature-settings:normal;font-variation-settings:normal;font-size:1em}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-.25em}sup{top:-.5em}table{text-indent:0;border-color:inherit;border-collapse:collapse}button,input,optgroup,select,textarea{font-family:inherit;font-feature-settings:inherit;font-variation-settings:inherit;font-size:100%;font-weight:inherit;line-height:inherit;letter-spacing:inherit;color:inherit;margin:0;padding:0}button,select{text-transform:none}button,input:where([type=button]),input:where([type=reset]),input:where([type=submit]){-webkit-appearance:button;background-color:transparent;background-image:none}:-moz-focusring{outline:auto}:-moz-ui-invalid{box-shadow:none}progress{vertical-align:baseline}::-webkit-inner-spin-button,::-webkit-outer-spin-button{height:auto}[type=search]{-webkit-appearance:textfield;outline-offset:-2px}::-webkit-search-decoration{-webkit-appearance:none}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}summary{display:list-item}blockquote,dd,dl,figure,h1,h2,h3,h4,h5,h6,hr,p,pre{margin:0}fieldset{margin:0;padding:0}legend{padding:0}menu,ol,ul{list-style:none;margin:0;padding:0}dialog{padding:0}textarea{resize:vertical}input::placeholder,textarea::placeholder{opacity:1;color:#9ca3af}[role=button],button{cursor:pointer}:disabled{cursor:default}audio,canvas,embed,iframe,img,object,svg,video{display:block;vertical-align:middle}img,video{max-width:100%;height:auto}[hidden]:where(:not([hidden=until-found])){display:none}.fixed{position:fixed}.absolute{position:absolute}.relative{position:relative}.-right-20{right:-5rem}.-top-20{top:-5rem}.-top-3{top:-0.75rem}.left-1\/2{left:50%}.top-0{top:0px}.z-10{z-index:10}.z-50{z-index:50}.mx-auto{margin-left:auto;margin-right:auto}.mb-1{margin-bottom:0.25rem}.mb-12{margin-bottom:3rem}.mb-2{margin-bottom:0.5rem}.mb-4{margin-bottom:1rem}.mb-6{margin-bottom:1.5rem}.ml-2{margin-left:0.5rem}.mr-2{margin-right:0.5rem}.mr-3{margin-right:0.75rem}.mr-4{margin-right:1rem}.mt-1{margin-top:0.25rem}.mt-2{margin-top:0.5rem}.mt-4{margin-top:1rem}.mt-6{margin-top:1.5rem}.mt-8{margin-top:2rem}.block{display:block}.flex{display:flex}.grid{display:grid}.hidden{display:none}.h-16{height:4rem}.h-72{height:18rem}.h-8{height:2rem}.h-80{height:20rem}.h-96{height:24rem}.w-8{width:2rem}.w-96{width:24rem}.w-full{width:100%}.max-w-3xl{max-width:48rem}.max-w-7xl{max-width:80rem}.flex-1{flex:1 1 0%}.flex-shrink-0{flex-shrink:0}.-translate-x-1\/2{--tw-translate-x:-50%;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.scale-105{--tw-scale-x:1.05;--tw-scale-y:1.05;transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.transform{transform:translate(var(--tw-translate-x), var(--tw-translate-y)) rotate(var(--tw-rotate)) skewX(var(--tw-skew-x)) skewY(var(--tw-skew-y)) scaleX(var(--tw-scale-x)) scaleY(var(--tw-scale-y))}.cursor-default{cursor:default}.list-inside{list-style-position:inside}.list-disc{list-style-type:disc}.grid-cols-1{grid-template-columns:repeat(1, minmax(0, 1fr))}.grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.items-start{align-items:flex-start}.items-center{align-items:center}.justify-center{justify-content:center}.justify-between{justify-content:space-between}.gap-12{gap:3rem}.gap-2{gap:0.5rem}.gap-4{gap:1rem}.gap-6{gap:1.5rem}.gap-8{gap:2rem}.space-x-8 > :not([hidden]) ~ :not([hidden]){--tw-space-x-reverse:0;margin-right:calc(2rem * var(--tw-space-x-reverse));margin-left:calc(2rem * calc(1 - var(--tw-space-x-reverse)))}.space-y-12 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(3rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(3rem * var(--tw-space-y-reverse))}.space-y-2 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(0.5rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(0.5rem * var(--tw-space-y-reverse))}.space-y-4 > :not([hidden]) ~ :not([hidden]){--tw-space-y-reverse:0;margin-top:calc(1rem * calc(1 - var(--tw-space-y-reverse)));margin-bottom:calc(1rem * var(--tw-space-y-reverse))}.overflow-hidden{overflow:hidden}.rounded{border-radius:0.25rem}.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}.rounded-lg{border-radius:0.5rem}.rounded-xl{border-radius:0.75rem}.border{border-width:1px}.border-2{border-width:2px}.border-b{border-bottom-width:1px}.border-l-4{border-left-width:4px}.border-t{border-top-width:1px}.border-t-4{border-top-width:4px}.border-dashed{border-style:dashed}.border-amber-400{--tw-border-opacity:1;border-color:rgb(251 191 36 / var(--tw-border-opacity, 1))}.border-blue-100{--tw-border-opacity:1;border-color:rgb(219 234 254 / var(--tw-border-opacity, 1))}.border-blue-400{--tw-border-opacity:1;border-color:rgb(96 165 250 / var(--tw-border-opacity, 1))}.border-blue-600{--tw-border-opacity:1;border-color:rgb(37 99 235 / var(--tw-border-opacity, 1))}.border-gray-100{--tw-border-opacity:1;border-color:rgb(243 244 246 / var(--tw-border-opacity, 1))}.border-gray-200{--tw-border-opacity:1;border-color:rgb(229 231 235 / var(--tw-border-opacity, 1))}.border-gray-300{--tw-border-opacity:1;border-color:rgb(209 213 219 / var(--tw-border-opacity, 1))}.border-red-200{--tw-border-opacity:1;border-color:rgb(254 202 202 / var(--tw-border-opacity, 1))}.border-red-400{--tw-border-opacity:1;border-color:rgb(248 113 113 / var(--tw-border-opacity, 1))}.border-sky-200{--tw-border-opacity:1;border-color:rgb(186 230 253 / var(--tw-border-opacity, 1))}.border-sky-400{--tw-border-opacity:1;border-color:rgb(56 189 248 / var(--tw-border-opacity, 1))}.border-sky-500{--tw-border-opacity:1;border-color:rgb(14 165 233 / var(--tw-border-opacity, 1))}.border-slate-700{--tw-border-opacity:1;border-color:rgb(51 65 85 / var(--tw-border-opacity, 1))}.border-white\/20{border-color:rgb(255 255 255 / 0.2)}.bg-blue-50{--tw-bg-opacity:1;background-color:rgb(239 246 255 / var(--tw-bg-opacity, 1))}.bg-emerald-100{--tw-bg-opacity:1;background-color:rgb(209 250 229 / var(--tw-bg-opacity, 1))}.bg-gray-100{--tw-bg-opacity:1;background-color:rgb(243 244 246 / var(--tw-bg-opacity, 1))}.bg-gray-50{--tw-bg-opacity:1;background-color:rgb(249 250 251 / var(--tw-bg-opacity, 1))}.bg-indigo-100{--tw-bg-opacity:1;background-color:rgb(224 231 255 / var(--tw-bg-opacity, 1))}.bg-indigo-50{--tw-bg-opacity:1;background-color:rgb(238 242 255 / var(--tw-bg-opacity, 1))}.bg-purple-50{--tw-bg-opacity:1;background-color:rgb(250 245 255 / var(--tw-bg-opacity, 1))}.bg-red-100{--tw-bg-opacity:1;background-color:rgb(254 226 226 / var(--tw-bg-opacity, 1))}.bg-red-50{--tw-bg-opacity:1;background-color:rgb(254 242 242 / var(--tw-bg-opacity, 1))}.bg-sky-100{--tw-bg-opacity:1;background-color:rgb(224 242 254 / var(--tw-bg-opacity, 1))}.bg-sky-50{--tw-bg-opacity:1;background-color:rgb(240 249 255 / var(--tw-bg-opacity, 1))}.bg-sky-500\/20{background-color:rgb(14 165 233 / 0.2)}.bg-sky-600{--tw-bg-opacity:1;background-color:rgb(2 132 199 / var(--tw-bg-opacity, 1))}.bg-slate-200{--tw-bg-opacity:1;background-color:rgb(226 232 240 / var(--tw-bg-opacity, 1))}.bg-slate-900{--tw-bg-opacity:1;background-color:rgb(15 23 42 / var(--tw-bg-opacity, 1))}.bg-white{--tw-bg-opacity:1;background-color:rgb(255 255 255 / var(--tw-bg-opacity, 1))}.bg-white\/10{background-color:rgb(255 255 255 / 0.1)}.bg-white\/90{background-color:rgb(255 255 255 / 0.9)}.bg-gradient-to-r{background-image:linear-gradient(to right, var(--tw-gradient-stops))}.from-slate-800{--tw-gradient-from:#1e293b var(--tw-gradient-from-position);--tw-gradient-to:rgb(30 41 59 / 0) var(--tw-gradient-to-position);--tw-gradient-stops:var(--tw-gradient-from), var(--tw-gradient-to)}.to-slate-900{--tw-gradient-to:#0f172a var(--tw-gradient-to-position)}.p-2{padding:0.5rem}.p-3{padding:0.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-6{padding:1.5rem}.p-8{padding:2rem}.px-2{padding-left:0.5rem;padding-right:0.5rem}.px-3{padding-left:0.75rem;padding-right:0.75rem}.px-4{padding-left:1rem;padding-right:1rem}.py-1{padding-top:0.25rem;padding-bottom:0.25rem}.py-12{padding-top:3rem;padding-bottom:3rem}.py-2{padding-top:0.5rem;padding-bottom:0.5rem}.py-5{padding-top:1.25rem;padding-bottom:1.25rem}.py-8{padding-top:2rem;padding-bottom:2rem}.pb-12{padding-bottom:3rem}.pl-4{padding-left:1rem}.pt-16{padding-top:4rem}.pt-4{padding-top:1rem}.pt-8{padding-top:2rem}.text-center{text-align:center}.text-2xl{font-size:1.5rem;line-height:2rem}.text-3xl{font-size:1.875rem;line-height:2.25rem}.text-lg{font-size:1.125rem;line-height:1.75rem}.text-sm{font-size:0.875rem;line-height:1.25rem}.text-xl{font-size:1.25rem;line-height:1.75rem}.text-xs{font-size:0.75rem;line-height:1rem}.font-bold{font-weight:700}.font-medium{font-weight:500}.uppercase{text-transform:uppercase}.tracking-wider{letter-spacing:0.05em}.text-amber-800{--tw-text-opacity:1;color:rgb(146 64 14 / var(--tw-text-opacity, 1))}.text-blue-800{--tw-text-opacity:1;color:rgb(30 64 175 / var(--tw-text-opacity, 1))}.text-emerald-600{--tw-text-opacity:1;color:rgb(5 150 105 / var(--tw-text-opacity, 1))}.text-gray-400{--tw-text-opacity:1;color:rgb(156 163 175 / var(--tw-text-opacity, 1))}.text-gray-500{--tw-text-opacity:1;color:rgb(107 114 128 / var(--tw-text-opacity, 1))}.text-gray-600{--tw-text-opacity:1;color:rgb(75 85 99 / var(--tw-text-opacity, 1))}.text-gray-700{--tw-text-opacity:1;color:rgb(55 65 81 / var(--tw-text-opacity, 1))}.text-gray-800{--tw-text-opacity:1;color:rgb(31 41 55 / var(--tw-text-opacity, 1))}.text-indigo-600{--tw-text-opacity:1;color:rgb(79 70 229 / var(--tw-text-opacity, 1))}.text-indigo-800{--tw-text-opacity:1;color:rgb(55 48 163 / var(--tw-text-opacity, 1))}.text-purple-700{--tw-text-opacity:1;color:rgb(126 34 206 / var(--tw-text-opacity, 1))}.text-red-500{--tw-text-opacity:1;color:rgb(239 68 68 / var(--tw-text-opacity, 1))}.text-red-600{--tw-text-opacity:1;color:rgb(220 38 38 / var(--tw-text-opacity, 1))}.text-red-700{--tw-text-opacity:1;color:rgb(185 28 28 / var(--tw-text-opacity, 1))}.text-red-800{--tw-text-opacity:1;color:rgb(153 27 27 / var(--tw-text-opacity, 1))}.text-sky-300{--tw-text-opacity:1;color:rgb(125 211 252 / var(--tw-text-opacity, 1))}.text-sky-400{--tw-text-opacity:1;color:rgb(56 189 248 / var(--tw-text-opacity, 1))}.text-sky-600{--tw-text-opacity:1;color:rgb(2 132 199 / var(--tw-text-opacity, 1))}.text-sky-800{--tw-text-opacity:1;color:rgb(7 89 133 / var(--tw-text-opacity, 1))}.text-slate-300{--tw-text-opacity:1;color:rgb(203 213 225 / var(--tw-text-opacity, 1))}.text-slate-400{--tw-text-opacity:1;color:rgb(148 163 184 / var(--tw-text-opacity, 1))}.text-slate-800{--tw-text-opacity:1;color:rgb(30 41 59 / var(--tw-text-opacity, 1))}.text-white{--tw-text-opacity:1;color:rgb(255 255 255 / var(--tw-text-opacity, 1))}.antialiased{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.opacity-70{opacity:0.7}.shadow{--tw-shadow:0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 1px 3px 0 var(--tw-shadow-color), 0 1px 2px -1px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-lg{--tw-shadow:0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 10px 15px -3px var(--tw-shadow-color), 0 4px 6px -4px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-sm{--tw-shadow:0 1px 2px 0 rgb(0 0 0 / 0.05);--tw-shadow-colored:0 1px 2px 0 var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.shadow-xl{--tw-shadow:0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);--tw-shadow-colored:0 20px 25px -5px var(--tw-shadow-color), 0 8px 10px -6px var(--tw-shadow-color);box-shadow:var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow)}.ring-2{--tw-ring-offset-shadow:var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width) var(--tw-ring-offset-color);--tw-ring-shadow:var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color);box-shadow:var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 #0000)}.ring-indigo-200{--tw-ring-opacity:1;--tw-ring-color:rgb(199 210 254 / var(--tw-ring-opacity, 1))}.ring-sky-300{--tw-ring-opacity:1;--tw-ring-color:rgb(125 211 252 / var(--tw-ring-opacity, 1))}.blur-3xl{--tw-blur:blur(64px);filter:var(--tw-blur) var(--tw-brightness) var(--tw-contrast) var(--tw-grayscale) var(--tw-hue-rotate) var(--tw-invert) var(--tw-saturate) var(--tw-sepia) var(--tw-drop-shadow)}.backdrop-blur{--tw-backdrop-blur:blur(8px);-webkit-backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia);backdrop-filter:var(--tw-backdrop-blur) var(--tw-backdrop-brightness) var(--tw-backdrop-contrast) var(--tw-backdrop-grayscale) var(--tw-backdrop-hue-rotate) var(--tw-backdrop-invert) var(--tw-backdrop-opacity) var(--tw-backdrop-saturate) var(--tw-backdrop-sepia)}.transition{transition-property:color, background-color, border-color, fill, stroke, opacity, box-shadow, transform, filter, -webkit-text-decoration-color, -webkit-backdrop-filter;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;transition-property:color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter, -webkit-text-decoration-color, -webkit-backdrop-filter;transition-timing-function:cubic-bezier(0.4, 0, 0.2, 1);transition-duration:150ms}.hover\:bg-sky-700:hover{--tw-bg-opacity:1;background-color:rgb(3 105 161 / var(--tw-bg-opacity, 1))}.hover\:bg-slate-300:hover{--tw-bg-opacity:1;background-color:rgb(203 213 225 / var(--tw-bg-opacity, 1))}.hover\:opacity-100:hover{opacity:1}@media (min-width: 640px){.sm\:block{display:block}.sm\:px-6{padding-left:1.5rem;padding-right:1.5rem}}@media (min-width: 768px){.md\:grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.md\:grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.md\:text-4xl{font-size:2.25rem;line-height:2.5rem}}@media (min-width: 1024px){.lg\:col-span-2{grid-column:span 2 / span 2}.lg\:grid-cols-2{grid-template-columns:repeat(2, minmax(0, 1fr))}.lg\:grid-cols-3{grid-template-columns:repeat(3, minmax(0, 1fr))}.lg\:px-8{padding-left:2rem;padding-right:2rem}}</style></head>
-<body class="antialiased text-slate-800">
+    # --- 4. 開發效率分析 (Department Efficiency) ---
+    # 這是使用者要求的重點：開發數量 vs 業績貢獻
+    dept_stats = df_clean.groupby('歸屬部門').agg({
+        '銷貨淨額': 'sum',
+        '料號': 'nunique' # 計算該部門開發/銷售了多少支新品
+    }).reset_index()
+    
+    dept_stats.columns = ['name', 'revenue', 'sku_count']
+    
+    # 計算平均單品貢獻 (效率指標)
+    dept_stats['efficiency'] = dept_stats['revenue'] / dept_stats['sku_count']
+    
+    dept_stats_list = dept_stats.to_dict(orient='records')
 
-    <!-- Navigation -->
-    <nav class="fixed top-0 w-full z-50 bg-white/90 backdrop-blur border-b border-gray-200 shadow-sm">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between h-16">
-                <div class="flex items-center">
-                    <span class="text-2xl font-bold text-sky-600">❄️ 供應鏈轉型</span>
-                    <span class="ml-2 text-sm text-gray-500 hidden sm:block">| 凍轉藏機制評估報告</span>
-                </div>
-                <div class="flex space-x-8">
-                    <button onclick="scrollToSection(&#39;home&#39;)" class="nav-item px-3 py-5 text-sm font-medium active">總覽</button>
-                    <button onclick="scrollToSection(&#39;problem&#39;)" class="nav-item px-3 py-5 text-sm font-medium">痛點分析</button>
-                    <button onclick="scrollToSection(&#39;solution&#39;)" class="nav-item px-3 py-5 text-sm font-medium">核心解方</button>
-                    <button onclick="scrollToSection(&#39;tech&#39;)" class="nav-item px-3 py-5 text-sm font-medium">技術與合規</button>
-                    <button onclick="scrollToSection(&#39;roadmap&#39;)" class="nav-item px-3 py-5 text-sm font-medium">執行策略</button>
-                </div>
-            </div>
-        </div>
-    </nav>
-
-    <!-- Main Content -->
-    <div class="pt-16 pb-12 space-y-12">
-
-        <!-- 1. Hero / Executive Summary -->
-        <section id="home" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-            <div class="bg-gradient-to-r from-slate-800 to-slate-900 rounded-2xl p-8 text-white shadow-xl relative overflow-hidden">
-                <div class="relative z-10">
-                    <h1 class="text-3xl md:text-4xl font-bold mb-4">超商冷藏鮮食供應鏈策略轉型</h1>
-                    <p class="text-lg text-slate-300 max-w-3xl mb-6">
-                        針對 12/24 工廠運營策略會議：解決終端銷售不可預測與超商嚴格允收期之雙重挑戰。
-                        透過「凍轉藏」模式，實現供應鏈解耦，優化庫存管理並降低報廢風險。
-                    </p>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
-                        <div class="bg-white/10 p-4 rounded-lg border border-white/20">
-                            <div class="text-sky-300 font-bold mb-1">迫切性</div>
-                            <div class="text-sm">銷售波動劇烈 + 短效期限制 = 生產混亂與高報廢。</div>
-                        </div>
-                        <div class="bg-white/10 p-4 rounded-lg border border-white/20">
-                            <div class="text-sky-300 font-bold mb-1">關鍵解方</div>
-                            <div class="text-sm">以「庫存緩衝」取代「即時預測」，從「每日銷量」轉向「週庫存水位」管理。</div>
-                        </div>
-                        <div class="bg-white/10 p-4 rounded-lg border border-white/20">
-                            <div class="text-sky-300 font-bold mb-1">執行重點</div>
-                            <div class="text-sm">合規之風冷解凍技術 (Tempering) + 嚴謹之效期驗證 (Shelf-life Study)。</div>
-                        </div>
-                    </div>
-                </div>
-                <!-- Decorative Circle -->
-                <div class="absolute -right-20 -top-20 w-96 h-96 bg-sky-500/20 rounded-full blur-3xl"></div>
-            </div>
-        </section>
-
-        <!-- 2. Problem Diagnosis -->
-        <section id="problem" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="mb-6">
-                <h2 class="text-2xl font-bold text-gray-800 border-l-4 border-sky-500 pl-4">現況痛點：預測失效與長鞭效應</h2>
-                <p class="mt-2 text-gray-600">
-                    在缺乏 POS 數據且天氣、商圈變數過多的情況下，業務端難以提供精準的每日單店銷售 (Psd) 預估。
-                    這導致工廠排程在「欠貨」與「過允收報廢」之間劇烈擺盪。
-                </p>
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <!-- Chart Section -->
-                <div class="lg:col-span-2 glass-panel p-6 rounded-xl">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-bold text-lg text-gray-700">需求波動 vs. 生產響應模擬</h3>
-                        <div class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">資料來源：模擬歷史訂單模式</div>
-                    </div>
-                    <!-- Chart Container Constraint: w-full, max-height controlled -->
-                    <div class="w-full h-80 relative chart-container">
-                        <canvas id="volatilityChart" width="1117" height="480" style="display: block; box-sizing: border-box; height: 320px; width: 745.3px;"></canvas>
-                    </div>
-                    <div class="mt-4 flex gap-4 justify-center">
-                        <button onclick="updateVolatilityChart(&#39;current&#39;)" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded text-sm font-medium transition">顯示現況 (混亂)</button>
-                        <button onclick="updateVolatilityChart(&#39;proposed&#39;)" class="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded text-sm font-medium transition shadow-lg ring-2 ring-sky-300">模擬凍轉藏 (穩定)</button>
-                    </div>
-                </div>
-
-                <!-- Pain Points List -->
-                <div class="space-y-4">
-                    <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-red-400">
-                        <h4 class="font-bold text-red-800">Psd 預測黑箱</h4>
-                        <p class="text-sm text-gray-600 mt-2">變數過多（天氣、競品、店長心證），且新品缺乏基線，預測準確度極低。</p>
-                    </div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-amber-400">
-                        <h4 class="font-bold text-amber-800">允收期雙面刃</h4>
-                        <p class="text-sm text-gray-600 mt-2">超商拒收剩餘效期不足產品。提前生產若遇銷量下滑，即面臨整批報廢。</p>
-                    </div>
-                    <div class="bg-white p-5 rounded-xl shadow-sm border-l-4 border-blue-400">
-                        <h4 class="font-bold text-blue-800">產能浪費</h4>
-                        <p class="text-sm text-gray-600 mt-2">頻繁換線與急單插單，導致生產效率低下，無法發揮規模經濟。</p>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- 3. Core Solution -->
-        <section id="solution" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-white py-12 rounded-2xl shadow-sm">
-            <div class="text-center max-w-3xl mx-auto mb-12">
-                <h2 class="text-2xl font-bold text-gray-800">核心解方：供應鏈解耦 (Decoupling)</h2>
-                <p class="mt-4 text-gray-600">
-                    透過建立「冷凍半成品庫存」，將生產與終端需求脫鉤。
-                    預測焦點從「明日賣幾個」轉移至「下週庫存水位」，大幅提升容錯率。
-                </p>
-            </div>
-
-            <!-- Interactive Process Comparison -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-12">
-                <!-- Old Way -->
-                <div class="relative p-6 border-2 border-dashed border-gray-300 rounded-xl bg-gray-50 opacity-70 hover:opacity-100 transition">
-                    <h3 class="text-center font-bold text-gray-500 mb-6 uppercase tracking-wider">現行模式 (接單生產)</h3>
-                    <div class="space-y-4">
-                        <div class="flex items-center p-3 bg-white rounded shadow-sm">
-                            <div class="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold text-sm mr-3">1</div>
-                            <div>
-                                <div class="font-bold text-sm">接單 (D-1)</div>
-                                <div class="text-xs text-gray-500">業務依經驗預估，變動大</div>
-                            </div>
-                        </div>
-                        <div class="flex justify-center text-gray-400">⬇️ 壓力傳遞</div>
-                        <div class="flex items-center p-3 bg-white rounded shadow-sm">
-                            <div class="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold text-sm mr-3">2</div>
-                            <div>
-                                <div class="font-bold text-sm">緊急生產 (D-0)</div>
-                                <div class="text-xs text-gray-500">產線頻繁換線，加班趕貨</div>
-                            </div>
-                        </div>
-                        <div class="flex justify-center text-gray-400">⬇️ 風險極高</div>
-                        <div class="flex items-center p-3 bg-white rounded shadow-sm border border-red-200">
-                            <div class="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold text-sm mr-3">3</div>
-                            <div>
-                                <div class="font-bold text-sm">出貨/報廢</div>
-                                <div class="text-xs text-gray-500">過允收即報廢，損失巨大</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- New Way -->
-                <div class="relative p-6 border-2 border-sky-200 rounded-xl bg-sky-50 shadow-lg transform scale-105">
-                    <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-sky-600 text-white px-4 py-1 rounded-full text-xs font-bold shadow">推薦方案</div>
-                    <h3 class="text-center font-bold text-sky-800 mb-6 uppercase tracking-wider">凍轉藏模式 (庫存緩衝)</h3>
-                    <div class="space-y-4">
-                        <div class="flex items-center p-3 bg-white rounded shadow-sm border-l-4 border-sky-500">
-                            <div class="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold text-sm mr-3">1</div>
-                            <div>
-                                <div class="font-bold text-sm">計畫性生產</div>
-                                <div class="text-xs text-gray-500">依經濟批量生產，存入冷凍庫 (效期 &gt; 6個月)</div>
-                            </div>
-                        </div>
-                        <div class="flex justify-center text-sky-400 font-bold text-xs">⬇️ 緩衝池 (Buffer)</div>
-                        <div class="flex items-center p-3 bg-white rounded shadow-sm border-l-4 border-sky-500">
-                            <div class="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold text-sm mr-3">2</div>
-                            <div>
-                                <div class="font-bold text-sm">依需解凍 (Tempering)</div>
-                                <div class="text-xs text-gray-500">前置期縮短至 12-24hr，依安全庫存水位補貨</div>
-                            </div>
-                        </div>
-                        <div class="flex justify-center text-sky-400 font-bold text-xs">⬇️ 穩定供應</div>
-                        <div class="flex items-center p-3 bg-white rounded shadow-sm border-l-4 border-sky-500">
-                            <div class="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center font-bold text-sm mr-3">3</div>
-                            <div>
-                                <div class="font-bold text-sm">打印新效期出貨</div>
-                                <div class="text-xs text-gray-500">符合冷藏 50% 允收規範，降低特採需求</div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-             <div class="mt-8 bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-800 flex items-start">
-                <span class="text-xl mr-3">🤖</span>
-                <div>
-                    <strong>AI 輔助預測：</strong> 
-                    雖然不依賴 Psd，但建議引入簡易回歸模型，分析氣溫與過往訂單的關聯，並參考通路 AI 訂貨系統的 SOQ (Suggested Order Quantity) 趨勢，作為每週解凍量的校正參數。
-                </div>
-            </div>
-        </section>
-
-        <!-- 4. Technology & Compliance -->
-        <section id="tech" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                
-                <!-- 4.1 Thawing Technology -->
-                <div class="glass-panel p-6 rounded-xl">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                        <span class="w-8 h-8 rounded bg-indigo-100 text-indigo-600 flex items-center justify-center mr-2">⚙️</span>
-                        解凍技術評估
-                    </h2>
-                    <p class="text-sm text-gray-600 mb-6">
-                        解凍是相變過程，需控制「滴液流失」與「微生物」。
-                        <br>推薦採用：<span class="font-bold text-indigo-600">強制風冷解凍 (Forced Air)</span>。
-                    </p>
-                    
-                    <div class="w-full h-72 relative chart-container mx-auto">
-                        <canvas id="techRadarChart" width="808" height="432" style="display: block; box-sizing: border-box; height: 288px; width: 538.7px;"></canvas>
-                    </div>
-
-                    <div class="mt-6 grid grid-cols-3 gap-2 text-center text-xs">
-                        <div class="p-2 bg-red-50 rounded text-red-700">
-                            <strong>常溫靜置</strong><br>禁止 (微生物風險)
-                        </div>
-                        <div class="p-2 bg-indigo-50 rounded ring-2 ring-indigo-200 text-indigo-800">
-                            <strong>強制風冷</strong><br>推薦 (平衡/穩定)
-                        </div>
-                        <div class="p-2 bg-purple-50 rounded text-purple-700">
-                            <strong>微波解凍</strong><br>太貴 (未來目標)
-                        </div>
-                    </div>
-                </div>
-
-                <!-- 4.2 Compliance Process -->
-                <div class="bg-white p-6 rounded-xl shadow-sm">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4 flex items-center">
-                        <span class="w-8 h-8 rounded bg-emerald-100 text-emerald-600 flex items-center justify-center mr-2">⚖️</span>
-                        法規合規與打印作業
-                    </h2>
-                    <p class="text-sm text-gray-600 mb-4">
-                        冷凍轉冷藏必須通過保存期限評估 (Shelf-life Study)，並依賴專責小組執行。
-                    </p>
-
-                    <div class="space-y-4">
-                        <!-- Step 1 -->
-                        <div class="flex group step-card cursor-default p-2 rounded">
-                            <div class="flex-shrink-0 mr-4">
-                                <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center">1</div>
-                            </div>
-                            <div>
-                                <h4 class="font-bold text-gray-800">保存期限驗證 (Validation)</h4>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    模擬最差條件 (7°C) 儲存，檢測微生物 (李斯特菌)、感官、質地。依此訂定科學化的冷藏效期。
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Step 2 -->
-                        <div class="flex group step-card cursor-default p-2 rounded">
-                            <div class="flex-shrink-0 mr-4">
-                                <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center">2</div>
-                            </div>
-                            <div>
-                                <h4 class="font-bold text-gray-800">專責打印小組 (Labeling Team)</h4>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    設為關鍵管制點 (CCP)。使用抗凍、抗冷凝水的熱轉印 (TTO) 設備。
-                                    <span class="text-red-500 font-bold">嚴禁使用一般蠟基色帶，避免糊字被退貨。</span>
-                                </p>
-                            </div>
-                        </div>
-                        <!-- Step 3 -->
-                        <div class="flex group step-card cursor-default p-2 rounded">
-                            <div class="flex-shrink-0 mr-4">
-                                <div class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 font-bold flex items-center justify-center">3</div>
-                            </div>
-                            <div>
-                                <h4 class="font-bold text-gray-800">單一標示原則</h4>
-                                <p class="text-xs text-gray-500 mt-1">
-                                    不得出現雙重日期。新標示需完全覆蓋原冷凍效期。
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-4 pt-4 border-t border-gray-100">
-                         <h4 class="text-sm font-bold text-gray-700 mb-2">物流策略：自建 vs 委外 (3PL)</h4>
-                         <div class="flex gap-2">
-                             <div class="flex-1 bg-gray-50 p-2 rounded text-xs">
-                                 <span class="font-bold block mb-1">工廠自建</span>
-                                 掌控度高，但需投資空間與GMP設備。
-                             </div>
-                             <div class="flex-1 bg-gray-50 p-2 rounded text-xs">
-                                 <span class="font-bold block mb-1">3PL 加值服務</span>
-                                 如全日/好好物流。將固定成本轉變動，適合空間不足者。
-                             </div>
-                         </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- 5. Strategic Roadmap -->
-        <section id="roadmap" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-            <h2 class="text-2xl font-bold text-gray-800 mb-6">執行策略路徑圖</h2>
-            <div class="bg-white p-8 rounded-2xl shadow-sm">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-                    
-                    <!-- Short Term -->
-                    <div class="border-t-4 border-sky-400 pt-4">
-                        <h3 class="font-bold text-lg mb-2">短期 (1-2週)</h3>
-                        <ul class="text-sm text-gray-600 space-y-2 list-disc list-inside">
-                            <li><strong>選品：</strong>挑選高毛利、適合復熱之 SKU 試行。</li>
-                            <li><strong>驗證：</strong>啟動微生物與感官之 Shelf-life Study。</li>
-                            <li><strong>詢價：</strong>聯繫 3PL 評估解凍與貼標服務費率。</li>
-                            <li><strong>談判：</strong>向工廠承諾週需求預告，換取庫存緩衝。</li>
-                        </ul>
-                    </div>
-
-                    <!-- Mid Term -->
-                    <div class="border-t-4 border-blue-600 pt-4">
-                        <h3 class="font-bold text-lg mb-2">中期 (1-2個月)</h3>
-                        <ul class="text-sm text-gray-600 space-y-2 list-disc list-inside">
-                            <li><strong>設備：</strong>採購 TTO 熱轉印機或簽訂 3PL 合約。</li>
-                            <li><strong>機制：</strong>建立產銷協調會議 (S&amp;OP)，監控冷凍水位。</li>
-                            <li><strong>溝通：</strong>與超商採購確認新標示模式驗收標準。</li>
-                        </ul>
-                    </div>
-
-                    <!-- Long Term -->
-                    <div class="border-t-4 border-slate-700 pt-4">
-                        <h3 class="font-bold text-lg mb-2">長期 (6個月+)</h3>
-                        <ul class="text-sm text-gray-600 space-y-2 list-disc list-inside">
-                            <li><strong>全面導入：</strong>擴大至所有適合品項。</li>
-                            <li><strong>技術升級：</strong>評估微波解凍以應對急單。</li>
-                            <li><strong>數據整合：</strong>爭取介接通路訂貨系統 API。</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-    </div>
-
-    <!-- Footer -->
-    <footer class="bg-slate-900 text-slate-400 py-8 text-center text-sm">
-        <p>基於 12/24 工廠運營策略會議資料彙編</p>
-        <p class="mt-2">包含：預測優化、技術評估、合規體系</p>
-    </footer>
-
-    <!-- JavaScript for Interactions -->
-    <script>
-        // State
-        const state = {
-            chartMode: 'current' // 'current' or 'proposed'
-        };
-
-        // 1. Volatility Chart Logic
-        const volatilityCtx = document.getElementById('volatilityChart').getContext('2d');
+    # --- 5. 客戶貢獻度 (Top Customers) ---
+    top_customers = df_clean.groupby('客戶名稱')['銷貨淨額'].sum() \
+        .sort_values(ascending=False).head(10).reset_index()
         
-        // Data simulation
-        const labels = Array.from({length: 14}, (_, i) => `Day ${i+1}`);
-        const actualDemand = [800, 1200, 900, 1500, 600, 700, 1300, 850, 1100, 950, 1600, 500, 800, 1400]; // High volatility
-        const productionReaction = [800, 800, 1200, 900, 1500, 600, 700, 1300, 850, 1100, 950, 1600, 500, 800]; // Lagged reaction (Old way)
-        const frozenThawPlan = [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000]; // Smoothed (New way)
-        const wasteRisk = productionReaction.map((p, i) => {
-            if (p > actualDemand[i]) return p - actualDemand[i];
-            return 0;
-        });
+    top_customers_list = top_customers.to_dict(orient='records')
+    
+    # --- 6. 組合最終輸出 ---
+    dashboard_data = {
+        "period": "2025-01 ~ 2025-11",
+        "kpi": {
+            "total_sales": total_sales,
+            "total_kg": total_kg,
+            "total_skus": total_skus,
+            "avg_revenue_per_sku": total_sales / total_skus if total_skus > 0 else 0
+        },
+        "top_products": top_products_list,
+        "efficiency_matrix": dept_stats_list, # 用於散佈圖
+        "top_customers": top_customers_list
+    }
 
-        const volatilityChart = new Chart(volatilityCtx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [
-                    {
-                        label: '終端實際需求 (Demand)',
-                        data: actualDemand,
-                        borderColor: '#94a3b8', // Slate 400
-                        borderDash: [5, 5],
-                        borderWidth: 2,
-                        pointRadius: 0,
-                        tension: 0.4
-                    },
-                    {
-                        label: '工廠生產量 (Production)',
-                        data: productionReaction,
-                        borderColor: '#ef4444', // Red 500
-                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                        borderWidth: 3,
-                        fill: true,
-                        tension: 0.1
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        callbacks: {
-                            footer: (tooltipItems) => {
-                                if(state.chartMode === 'current') {
-                                    const production = tooltipItems[1].raw;
-                                    const demand = tooltipItems[0].raw;
-                                    if(production > demand) return `潛在報廢: ${production - demand}`;
-                                    if(production < demand) return `潛在缺貨: ${demand - production}`;
-                                }
-                                return '';
-                            }
-                        }
-                    },
-                    legend: {
-                        position: 'top',
-                    },
-                    title: {
-                        display: true,
-                        text: '現況：生產追著訂單跑 (高報廢/高缺貨)',
-                        font: { size: 16 }
-                    }
-                },
-                interaction: {
-                    mode: 'nearest',
-                    axis: 'x',
-                    intersect: false
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: { display: true, text: '數量 (Units)' }
-                    }
-                }
-            }
-        });
+    return dashboard_data
 
-        function updateVolatilityChart(mode) {
-            state.chartMode = mode;
-            if (mode === 'current') {
-                volatilityChart.data.datasets[1] = {
-                    label: '工廠生產量 (接單生產)',
-                    data: productionReaction,
-                    borderColor: '#ef4444',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.1
-                };
-                volatilityChart.options.plugins.title.text = '現況：生產追著訂單跑 (高報廢/高缺貨)';
-            } else {
-                volatilityChart.data.datasets[1] = {
-                    label: '解凍供應量 (庫存調節)',
-                    data: frozenThawPlan,
-                    borderColor: '#0ea5e9', // Sky 500
-                    backgroundColor: 'rgba(14, 165, 233, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0
-                };
-                volatilityChart.options.plugins.title.text = '新模式：生產平準化，利用冷凍庫存吸收波動';
-            }
-            volatilityChart.update();
-        }
-
-        // 2. Tech Radar Chart Logic
-        const radarCtx = document.getElementById('techRadarChart').getContext('2d');
-        const techRadarChart = new Chart(radarCtx, {
-            type: 'radar',
-            data: {
-                labels: ['成本效益 (Cost)', '解凍速度 (Speed)', '品質保持 (Quality)', '微生物控制 (Safety)', '空間需求 (Space)'],
-                datasets: [
-                    {
-                        label: '強制風冷 (推薦)',
-                        data: [80, 70, 85, 90, 60],
-                        fill: true,
-                        backgroundColor: 'rgba(59, 130, 246, 0.2)', // Blue
-                        borderColor: 'rgb(59, 130, 246)',
-                        pointBackgroundColor: 'rgb(59, 130, 246)',
-                    },
-                    {
-                        label: '微波解凍',
-                        data: [20, 95, 95, 95, 40],
-                        fill: true,
-                        backgroundColor: 'rgba(168, 85, 247, 0.2)', // Purple
-                        borderColor: 'rgb(168, 85, 247)',
-                        pointBackgroundColor: 'rgb(168, 85, 247)',
-                    },
-                    {
-                        label: '常溫靜置 (禁止)',
-                        data: [95, 20, 30, 10, 80],
-                        fill: true,
-                        backgroundColor: 'rgba(239, 68, 68, 0.2)', // Red
-                        borderColor: 'rgb(239, 68, 68)',
-                        pointBackgroundColor: 'rgb(239, 68, 68)',
-                        borderDash: [5, 5]
-                    }
-                ]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    r: {
-                        angleLines: { display: false },
-                        suggestedMin: 0,
-                        suggestedMax: 100,
-                        ticks: { display: false } // Hide numbers for cleaner look
-                    }
-                },
-                plugins: {
-                    legend: { position: 'bottom' },
-                    tooltip: {
-                        callbacks: {
-                            label: (context) => {
-                                return context.dataset.label + ': ' + context.raw + ' 分';
-                            }
-                        }
-                    }
-                }
-            }
-        });
-
-        // Navigation Scroll
-        function scrollToSection(id) {
-            const element = document.getElementById(id);
-            const offset = 80; // height of nav
-            const bodyRect = document.body.getBoundingClientRect().top;
-            const elementRect = element.getBoundingClientRect().top;
-            const elementPosition = elementRect - bodyRect;
-            const offsetPosition = elementPosition - offset;
-
-            window.scrollTo({
-                top: offsetPosition,
-                behavior: "smooth"
-            });
-
-            // Update active state
-            document.querySelectorAll('.nav-item').forEach(btn => btn.classList.remove('active'));
-            event.target.classList.add('active');
-        }
-
-        // Highlight nav on scroll
-        window.addEventListener('scroll', () => {
-            const sections = ['home', 'problem', 'solution', 'tech', 'roadmap'];
-            let current = '';
+if __name__ == "__main__":
+    # 使用範例檔名，請確保檔案在同一目錄下
+    file_name = '2025年1~11月新品售統計.xlsx - 新品業績.csv'
+    
+    if os.path.exists(file_name):
+        data = process_sales_data(file_name)
+        
+        # 輸出成 JSON 檔案
+        with open('dashboard_data.json', 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
             
-            sections.forEach(section => {
-                const element = document.getElementById(section);
-                const sectionTop = element.offsetTop;
-                if (pageYOffset >= sectionTop - 100) {
-                    current = section;
-                }
-            });
-
-            document.querySelectorAll('.nav-item').forEach(btn => {
-                btn.classList.remove('active');
-                if (btn.getAttribute('onclick').includes(current)) {
-                    btn.classList.add('active');
-                }
-            });
-        });
-
-    </script>
-
-</body></html>
+        print("分析完成！數據已輸出至 'dashboard_data.json'")
+        print(f"總銷售額: {data['kpi']['total_sales']:,.0f}")
+    else:
+        print(f"找不到檔案: {file_name}，請確認檔名與路徑。")
